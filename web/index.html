@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuickNotes</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface2: #273549;
+      --border: #334155;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --high: #ef4444;
+      --high-bg: #3b1515;
+      --medium: #f97316;
+      --medium-bg: #3b2015;
+      --low: #22c55e;
+      --low-bg: #153b23;
+      --done: #475569;
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── TOPBAR ── */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(15,23,42,0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 1.25rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
+    .search-wrap { flex: 1; position: relative; max-width: 480px; }
+    .search-wrap input {
+      width: 100%; padding: 9px 14px 9px 38px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 0.9rem;
+      outline: none; transition: border-color .2s;
+    }
+    .search-wrap input:focus { border-color: var(--accent); }
+    .search-wrap .icon {
+      position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+      color: var(--text-muted); pointer-events: none;
+    }
+    .header-actions { display: flex; gap: 8px; margin-left: auto; }
+
+    /* ── LAYOUT ── */
+    .app { display: flex; height: calc(100vh - 57px); }
+
+    /* ── SIDEBAR ── */
+    aside {
+      width: 220px; min-width: 220px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 16px 12px;
+      overflow-y: auto;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .sidebar-label {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--text-muted);
+      padding: 8px 8px 4px;
+    }
+    .sidebar-btn {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 8px;
+      background: none; border: none; color: var(--text-muted);
+      font-size: 0.875rem; cursor: pointer; text-align: left; width: 100%;
+      transition: background .15s, color .15s;
+    }
+    .sidebar-btn:hover, .sidebar-btn.active {
+      background: var(--surface2); color: var(--text);
+    }
+    .tag-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .sidebar-divider { height: 1px; background: var(--border); margin: 6px 0; }
+
+    /* ── MAIN AREA ── */
+    main {
+      flex: 1; overflow-y: auto; padding: 20px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+
+    .filters-bar {
+      display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    }
+    .filter-chip {
+      padding: 5px 12px; border-radius: 20px; font-size: 0.8rem;
+      border: 1px solid var(--border); background: none; color: var(--text-muted);
+      cursor: pointer; transition: all .15s;
+    }
+    .filter-chip:hover { border-color: var(--accent); color: var(--text); }
+    .filter-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    /* ── NOTES GRID ── */
+    .notes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+    }
+    .empty-state {
+      text-align: center; padding: 60px 20px; color: var(--text-muted);
+    }
+    .empty-state svg { margin-bottom: 12px; opacity: .4; }
+    .empty-state p { font-size: 1rem; }
+
+    /* ── NOTE CARD ── */
+    .note-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex; flex-direction: column; gap: 10px;
+      transition: box-shadow .2s, transform .2s;
+      position: relative;
+      cursor: pointer;
+    }
+    .note-card:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
+    .note-card.completed { opacity: .55; }
+    .note-card.priority-high { border-left: 3px solid var(--high); }
+    .note-card.priority-medium { border-left: 3px solid var(--medium); }
+    .note-card.priority-low { border-left: 3px solid var(--low); }
+
+    .note-header { display: flex; align-items: flex-start; gap: 8px; }
+    .note-title {
+      flex: 1; font-size: 1rem; font-weight: 600; line-height: 1.3;
+    }
+    .note-card.completed .note-title { text-decoration: line-through; color: var(--text-muted); }
+    .note-body {
+      font-size: 0.85rem; color: var(--text-muted);
+      display: -webkit-box; -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical; overflow: hidden;
+      line-height: 1.5;
+    }
+    .note-footer { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+
+    .priority-badge {
+      font-size: 0.7rem; font-weight: 700; padding: 2px 8px;
+      border-radius: 4px; text-transform: uppercase; letter-spacing: .04em;
+    }
+    .priority-badge.high { background: var(--high-bg); color: var(--high); }
+    .priority-badge.medium { background: var(--medium-bg); color: var(--medium); }
+    .priority-badge.low { background: var(--low-bg); color: var(--low); }
+
+    .tag-badge {
+      font-size: 0.7rem; padding: 2px 8px; border-radius: 4px;
+      color: #fff; opacity: .85;
+    }
+
+    .reminder-badge {
+      font-size: 0.7rem; padding: 2px 8px; border-radius: 4px;
+      background: #1e3a5f; color: #60a5fa;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .reminder-badge.overdue { background: #3b1515; color: var(--high); }
+
+    .note-meta { font-size: 0.72rem; color: var(--text-muted); margin-left: auto; }
+
+    .note-actions {
+      position: absolute; top: 10px; right: 10px;
+      display: none; gap: 4px;
+    }
+    .note-card:hover .note-actions { display: flex; }
+    .icon-btn {
+      width: 28px; height: 28px; border-radius: 6px;
+      border: none; background: var(--surface2);
+      color: var(--text-muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, color .15s; font-size: 13px;
+    }
+    .icon-btn:hover { background: var(--border); color: var(--text); }
+    .icon-btn.danger:hover { background: #3b1515; color: var(--high); }
+    .icon-btn.success:hover { background: var(--low-bg); color: var(--low); }
+
+    .attach-count { font-size: 0.72rem; color: var(--text-muted); display: flex; align-items: center; gap: 3px; }
+
+    /* ── FAB ── */
+    .fab {
+      position: fixed; bottom: 28px; right: 28px; z-index: 200;
+      width: 56px; height: 56px; border-radius: 50%;
+      background: var(--accent); border: none; color: #fff;
+      font-size: 1.6rem; cursor: pointer; box-shadow: var(--shadow);
+      display: flex; align-items: center; justify-content: center;
+      transition: background .2s, transform .2s;
+    }
+    .fab:hover { background: var(--accent-hover); transform: scale(1.08); }
+
+    /* ── MODAL ── */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 300;
+      background: rgba(0,0,0,.65); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.hidden { display: none; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; width: 100%; max-width: 560px;
+      max-height: 90vh; overflow-y: auto;
+      box-shadow: var(--shadow); padding: 24px;
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; }
+    .modal-header h2 { font-size: 1.1rem; font-weight: 700; }
+
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; }
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      padding: 9px 12px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 0.9rem;
+      outline: none; transition: border-color .2s; font-family: inherit;
+    }
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus { border-color: var(--accent); }
+    .form-group textarea { resize: vertical; min-height: 100px; }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    .tags-selector { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag-option {
+      padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border);
+      font-size: 0.8rem; cursor: pointer; background: none; color: var(--text-muted);
+      transition: all .15s;
+    }
+    .tag-option.selected { color: #fff; border-color: transparent; }
+
+    .attachment-list { display: flex; flex-direction: column; gap: 6px; }
+    .attachment-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px;
+      font-size: 0.82rem;
+    }
+    .attachment-item a { color: var(--accent); text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .attachment-item a:hover { text-decoration: underline; }
+
+    .modal-footer { display: flex; gap: 8px; justify-content: flex-end; }
+    .btn {
+      padding: 9px 18px; border-radius: 8px; border: none;
+      font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all .15s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: var(--surface2); color: var(--text); }
+    .btn-secondary:hover { background: var(--border); }
+    .btn-danger { background: var(--high-bg); color: var(--high); }
+    .btn-danger:hover { background: #4b1818; }
+
+    /* ── MANAGE TAGS PANEL ── */
+    .new-tag-row { display: flex; gap: 8px; align-items: center; }
+    .color-picker { width: 38px; height: 38px; border: none; border-radius: 6px; cursor: pointer; background: none; padding: 0; }
+    .tag-list-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px;
+    }
+    .tag-list-item span { flex: 1; font-size: 0.88rem; }
+
+    /* ── TOAST ── */
+    #toast {
+      position: fixed; bottom: 90px; right: 24px; z-index: 999;
+      background: var(--surface2); color: var(--text);
+      padding: 10px 18px; border-radius: 8px; font-size: 0.88rem;
+      box-shadow: var(--shadow); opacity: 0;
+      transition: opacity .3s; pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+
+    @media (max-width: 640px) {
+      aside { display: none; }
+      .notes-grid { grid-template-columns: 1fr; }
+      .form-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <h1>⚡ QuickNotes</h1>
+  <div class="search-wrap">
+    <svg class="icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+    </svg>
+    <input type="text" id="searchInput" placeholder="Search notes…" autocomplete="off" />
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-secondary" id="manageTagsBtn">🏷 Tags</button>
+    <button class="btn btn-primary" id="newNoteBtn">+ New Note</button>
+  </div>
+</header>
+
+<div class="app">
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-label">Filter</div>
+    <button class="sidebar-btn active" data-filter="all">
+      <span>📋</span> All Notes
+    </button>
+    <button class="sidebar-btn" data-filter="completed">
+      <span>✅</span> Completed
+    </button>
+    <button class="sidebar-btn" data-filter="reminder">
+      <span>🔔</span> With Reminder
+    </button>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-label">Priority</div>
+    <button class="sidebar-btn" data-priority="high">
+      <span style="color:var(--high)">●</span> High
+    </button>
+    <button class="sidebar-btn" data-priority="medium">
+      <span style="color:var(--medium)">●</span> Medium
+    </button>
+    <button class="sidebar-btn" data-priority="low">
+      <span style="color:var(--low)">●</span> Low
+    </button>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-label">Tags</div>
+    <div id="sidebarTags"></div>
+  </aside>
+
+  <!-- Main -->
+  <main>
+    <div class="filters-bar">
+      <button class="filter-chip active" data-chip="all">All</button>
+      <button class="filter-chip" data-chip="active">Active</button>
+      <button class="filter-chip" data-chip="completed">Done</button>
+      <button class="filter-chip" data-chip="high">🔴 High</button>
+      <button class="filter-chip" data-chip="medium">🟠 Medium</button>
+      <button class="filter-chip" data-chip="low">🟢 Low</button>
+    </div>
+    <div class="notes-grid" id="notesGrid"></div>
+  </main>
+</div>
+
+<!-- FAB -->
+<button class="fab" id="fabBtn">+</button>
+
+<!-- Note Modal -->
+<div class="modal-overlay hidden" id="noteModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">New Note</h2>
+      <button class="icon-btn" id="closeModal">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Title *</label>
+      <input type="text" id="noteTitle" placeholder="Note title…" />
+    </div>
+    <div class="form-group">
+      <label>Body</label>
+      <textarea id="noteBody" placeholder="Write your note here…"></textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Priority</label>
+        <select id="notePriority">
+          <option value="high">🔴 High</option>
+          <option value="medium" selected>🟠 Medium</option>
+          <option value="low">🟢 Low</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Reminder</label>
+        <input type="datetime-local" id="noteReminder" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Tags</label>
+      <div class="tags-selector" id="tagsSelector"></div>
+    </div>
+    <!-- Attachments (shown in edit mode) -->
+    <div class="form-group" id="attachmentSection" style="display:none">
+      <label>Attachments</label>
+      <div class="attachment-list" id="attachmentList"></div>
+      <input type="file" id="fileInput" style="display:none" multiple />
+      <button class="btn btn-secondary" style="margin-top:6px;align-self:flex-start" id="uploadFileBtn">📎 Attach File</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="cancelModal">Cancel</button>
+      <button class="btn btn-primary" id="saveNote">Save Note</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manage Tags Modal -->
+<div class="modal-overlay hidden" id="tagsModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h2>Manage Tags</h2>
+      <button class="icon-btn" id="closeTagsModal">✕</button>
+    </div>
+    <div class="new-tag-row">
+      <input type="color" class="color-picker" id="newTagColor" value="#6366f1" />
+      <input type="text" id="newTagName" placeholder="Tag name…" style="flex:1;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:.9rem;outline:none" />
+      <button class="btn btn-primary" id="createTagBtn">Add</button>
+    </div>
+    <div id="tagsList" style="display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+const API = 'http://localhost:3001/api';
+let notes = [];
+let tags = [];
+let editingNoteId = null;
+let selectedTagIds = new Set();
+let activeFilter = { sidebar: 'all', chip: 'all', tag: null, search: '' };
+
+// ── API helpers ──
+async function api(path, options = {}) {
+  const res = await fetch(API + path, {
+    headers: options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' },
+    ...options
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ── Toast ──
+function toast(msg, duration = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ── Load data ──
+async function loadTags() {
+  tags = await api('/tags');
+  renderSidebarTags();
+  renderTagsSelector();
+  renderTagsList();
+}
+
+async function loadNotes() {
+  const params = new URLSearchParams();
+  if (activeFilter.search) params.set('search', activeFilter.search);
+  if (activeFilter.tag) params.set('tag', activeFilter.tag);
+
+  // Priority from chip or sidebar
+  const p = activeFilter.chip;
+  if (['high','medium','low'].includes(p)) params.set('priority', p);
+
+  if (activeFilter.chip === 'completed' || activeFilter.sidebar === 'completed') {
+    params.set('completed', 'true');
+  } else if (activeFilter.chip === 'active') {
+    params.set('completed', 'false');
+  }
+
+  notes = await api('/notes?' + params.toString());
+  renderNotes();
+}
+
+// ── Render ──
+function formatDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function isOverdue(iso) {
+  if (!iso) return false;
+  return new Date(iso) < new Date();
+}
+
+function renderNotes() {
+  const grid = document.getElementById('notesGrid');
+  let filtered = notes;
+
+  if (activeFilter.sidebar === 'reminder') {
+    filtered = filtered.filter(n => n.reminder_at);
+  }
+
+  if (!filtered.length) {
+    grid.innerHTML = `
+      <div class="empty-state" style="grid-column:1/-1">
+        <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+        </svg>
+        <p>No notes found</p>
+      </div>`;
+    return;
+  }
+
+  grid.innerHTML = filtered.map(note => {
+    const overdue = isOverdue(note.reminder_at);
+    return `
+    <div class="note-card priority-${note.priority} ${note.completed ? 'completed' : ''}" data-id="${note.id}">
+      <div class="note-actions">
+        <button class="icon-btn success" title="Toggle done" onclick="event.stopPropagation();toggleComplete('${note.id}')">✓</button>
+        <button class="icon-btn" title="Edit" onclick="event.stopPropagation();openEdit('${note.id}')">✎</button>
+        <button class="icon-btn danger" title="Delete" onclick="event.stopPropagation();deleteNote('${note.id}')">🗑</button>
+      </div>
+      <div class="note-header">
+        <div class="note-title">${escHtml(note.title)}</div>
+      </div>
+      ${note.body ? `<div class="note-body">${escHtml(note.body)}</div>` : ''}
+      <div class="note-footer">
+        <span class="priority-badge ${note.priority}">${note.priority}</span>
+        ${note.tags.map(t => `<span class="tag-badge" style="background:${t.color}">${escHtml(t.name)}</span>`).join('')}
+        ${note.reminder_at ? `<span class="reminder-badge ${overdue ? 'overdue' : ''}">🔔 ${formatDate(note.reminder_at)}</span>` : ''}
+        ${note.attachments.length ? `<span class="attach-count">📎 ${note.attachments.length}</span>` : ''}
+        <span class="note-meta">${formatDate(note.created_at)}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  grid.querySelectorAll('.note-card').forEach(card => {
+    card.addEventListener('click', () => openEdit(card.dataset.id));
+  });
+}
+
+function escHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderSidebarTags() {
+  const el = document.getElementById('sidebarTags');
+  el.innerHTML = tags.map(t => `
+    <button class="sidebar-btn" data-tag="${t.name}">
+      <span class="tag-dot" style="background:${t.color}"></span> ${escHtml(t.name)}
+    </button>`).join('');
+
+  el.querySelectorAll('.sidebar-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sidebar-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeFilter.tag = btn.dataset.tag;
+      activeFilter.sidebar = null;
+      loadNotes();
+    });
+  });
+}
+
+function renderTagsSelector() {
+  const el = document.getElementById('tagsSelector');
+  el.innerHTML = tags.map(t => `
+    <button class="tag-option ${selectedTagIds.has(t.id) ? 'selected' : ''}"
+      data-id="${t.id}" style="${selectedTagIds.has(t.id) ? `background:${t.color}` : ''}">
+      ${escHtml(t.name)}
+    </button>`).join('');
+
+  el.querySelectorAll('.tag-option').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      const tag = tags.find(t => t.id === id);
+      if (selectedTagIds.has(id)) {
+        selectedTagIds.delete(id);
+        btn.classList.remove('selected');
+        btn.style.background = '';
+      } else {
+        selectedTagIds.add(id);
+        btn.classList.add('selected');
+        btn.style.background = tag.color;
+      }
+    });
+  });
+}
+
+function renderTagsList() {
+  const el = document.getElementById('tagsList');
+  el.innerHTML = tags.map(t => `
+    <div class="tag-list-item">
+      <span class="tag-dot" style="background:${t.color}"></span>
+      <span>${escHtml(t.name)}</span>
+      <button class="icon-btn danger" onclick="deleteTag('${t.id}')">🗑</button>
+    </div>`).join('');
+}
+
+// ── Sidebar / filter buttons ──
+document.querySelectorAll('[data-filter], [data-priority]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.sidebar-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter.tag = null;
+    activeFilter.sidebar = btn.dataset.filter || btn.dataset.priority || 'all';
+    if (btn.dataset.priority) {
+      activeFilter.chip = btn.dataset.priority;
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    } else {
+      activeFilter.chip = 'all';
+      document.querySelectorAll('.filter-chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.chip === 'all');
+      });
+    }
+    loadNotes();
+  });
+});
+
+document.querySelectorAll('.filter-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activeFilter.chip = chip.dataset.chip;
+    loadNotes();
+  });
+});
+
+// ── Search ──
+let searchTimer;
+document.getElementById('searchInput').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    activeFilter.search = e.target.value.trim();
+    loadNotes();
+  }, 300);
+});
+
+// ── Modal ──
+function openNew() {
+  editingNoteId = null;
+  selectedTagIds.clear();
+  document.getElementById('modalTitle').textContent = 'New Note';
+  document.getElementById('noteTitle').value = '';
+  document.getElementById('noteBody').value = '';
+  document.getElementById('notePriority').value = 'medium';
+  document.getElementById('noteReminder').value = '';
+  document.getElementById('attachmentSection').style.display = 'none';
+  renderTagsSelector();
+  document.getElementById('noteModal').classList.remove('hidden');
+  document.getElementById('noteTitle').focus();
+}
+
+async function openEdit(id) {
+  const note = notes.find(n => n.id === id) || await api('/notes/' + id);
+  editingNoteId = id;
+  selectedTagIds = new Set(note.tags.map(t => t.id));
+  document.getElementById('modalTitle').textContent = 'Edit Note';
+  document.getElementById('noteTitle').value = note.title;
+  document.getElementById('noteBody').value = note.body || '';
+  document.getElementById('notePriority').value = note.priority;
+  document.getElementById('noteReminder').value = note.reminder_at
+    ? note.reminder_at.replace('Z','').substring(0,16) : '';
+  renderTagsSelector();
+
+  // Show attachments
+  document.getElementById('attachmentSection').style.display = 'block';
+  renderAttachments(note.attachments, id);
+
+  document.getElementById('noteModal').classList.remove('hidden');
+}
+
+function renderAttachments(attachments, noteId) {
+  const list = document.getElementById('attachmentList');
+  list.innerHTML = attachments.map(a => `
+    <div class="attachment-item">
+      <span>📎</span>
+      <a href="${API.replace('/api','')}/uploads/${a.filename}" target="_blank">${escHtml(a.original_name)}</a>
+      <span style="color:var(--text-muted);font-size:.7rem">${(a.size/1024).toFixed(1)}KB</span>
+      <button class="icon-btn danger" onclick="deleteAttachment('${a.id}','${noteId}')">🗑</button>
+    </div>`).join('') || '<span style="color:var(--text-muted);font-size:.82rem">No attachments yet</span>';
+}
+
+function closeModal() {
+  document.getElementById('noteModal').classList.add('hidden');
+}
+
+document.getElementById('newNoteBtn').addEventListener('click', openNew);
+document.getElementById('fabBtn').addEventListener('click', openNew);
+document.getElementById('closeModal').addEventListener('click', closeModal);
+document.getElementById('cancelModal').addEventListener('click', closeModal);
+
+document.getElementById('saveNote').addEventListener('click', async () => {
+  const title = document.getElementById('noteTitle').value.trim();
+  if (!title) { toast('Title is required ⚠️'); return; }
+
+  const reminder = document.getElementById('noteReminder').value;
+  const body = {
+    title,
+    body: document.getElementById('noteBody').value,
+    priority: document.getElementById('notePriority').value,
+    reminder_at: reminder ? new Date(reminder).toISOString() : null,
+    tag_ids: [...selectedTagIds]
+  };
+
+  if (editingNoteId) {
+    await api('/notes/' + editingNoteId, { method: 'PUT', body: JSON.stringify(body) });
+    toast('Note updated ✓');
+  } else {
+    await api('/notes', { method: 'POST', body: JSON.stringify(body) });
+    toast('Note created ✓');
+  }
+  closeModal();
+  loadNotes();
+});
+
+// ── Note actions ──
+async function toggleComplete(id) {
+  await api('/notes/' + id + '/complete', { method: 'PATCH' });
+  loadNotes();
+}
+
+async function deleteNote(id) {
+  if (!confirm('Delete this note?')) return;
+  await api('/notes/' + id, { method: 'DELETE' });
+  toast('Note deleted');
+  loadNotes();
+}
+
+// ── Attachments ──
+document.getElementById('uploadFileBtn').addEventListener('click', () => {
+  document.getElementById('fileInput').click();
+});
+
+document.getElementById('fileInput').addEventListener('change', async e => {
+  const files = Array.from(e.target.files);
+  for (const file of files) {
+    const fd = new FormData();
+    fd.append('file', file);
+    await fetch(`${API}/attachments/${editingNoteId}`, { method: 'POST', body: fd });
+  }
+  e.target.value = '';
+  const updated = await api('/notes/' + editingNoteId);
+  renderAttachments(updated.attachments, editingNoteId);
+  toast('File(s) uploaded ✓');
+  loadNotes();
+});
+
+async function deleteAttachment(id, noteId) {
+  await api('/attachments/' + id, { method: 'DELETE' });
+  const updated = await api('/notes/' + noteId);
+  renderAttachments(updated.attachments, noteId);
+  toast('Attachment removed');
+}
+
+// ── Tags modal ──
+document.getElementById('manageTagsBtn').addEventListener('click', () => {
+  renderTagsList();
+  document.getElementById('tagsModal').classList.remove('hidden');
+});
+document.getElementById('closeTagsModal').addEventListener('click', () => {
+  document.getElementById('tagsModal').classList.add('hidden');
+});
+
+document.getElementById('createTagBtn').addEventListener('click', async () => {
+  const name = document.getElementById('newTagName').value.trim();
+  if (!name) return;
+  const color = document.getElementById('newTagColor').value;
+  await api('/tags', { method: 'POST', body: JSON.stringify({ name, color }) });
+  document.getElementById('newTagName').value = '';
+  await loadTags();
+  toast('Tag created ✓');
+});
+
+async function deleteTag(id) {
+  if (!confirm('Delete this tag?')) return;
+  await api('/tags/' + id, { method: 'DELETE' });
+  await loadTags();
+  loadNotes();
+  toast('Tag deleted');
+}
+
+// ── Reminders (browser notifications) ──
+async function checkReminders() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') await Notification.requestPermission();
+  if (Notification.permission !== 'granted') return;
+
+  const now = new Date();
+  const allNotes = await api('/notes');
+  allNotes.forEach(note => {
+    if (!note.reminder_at || note.completed) return;
+    const remTime = new Date(note.reminder_at);
+    const diff = remTime - now;
+    if (diff > 0 && diff < 60000) { // fire if within next 60 seconds
+      setTimeout(() => {
+        new Notification('⚡ QuickNotes Reminder', {
+          body: note.title,
+          icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">⚡</text></svg>'
+        });
+      }, diff);
+    }
+  });
+}
+
+// ── Init ──
+async function init() {
+  if ('Notification' in window) Notification.requestPermission();
+  await loadTags();
+  await loadNotes();
+  setInterval(checkReminders, 30000);
+  checkReminders();
+}
+
+init();
+</script>
+</body>
+</html>
