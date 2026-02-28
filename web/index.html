@@ -25,6 +25,30 @@
       --done: #475569;
       --radius: 12px;
       --shadow: 0 4px 24px rgba(0,0,0,0.4);
+      --header-bg: rgba(15,23,42,0.95);
+      --reminder-bg: #1e3a5f;
+      --reminder-color: #60a5fa;
+      --danger-hover-bg: #4b1818;
+      --icon-danger-bg: #3b1515;
+    }
+
+    [data-theme="light"] {
+      --bg:             #f8fafc;
+      --surface:        #ffffff;
+      --surface2:       #f1f5f9;
+      --border:         #e2e8f0;
+      --text:           #0f172a;
+      --text-muted:     #64748b;
+      --high-bg:        #fee2e2;
+      --medium-bg:      #ffedd5;
+      --low-bg:         #dcfce7;
+      --done:           #94a3b8;
+      --shadow:         0 4px 24px rgba(0,0,0,0.1);
+      --header-bg:      rgba(248,250,252,0.95);
+      --reminder-bg:    #dbeafe;
+      --reminder-color: #2563eb;
+      --danger-hover-bg: #fca5a5;
+      --icon-danger-bg:  #fee2e2;
     }
 
     body {
@@ -37,7 +61,7 @@
     /* ── TOPBAR ── */
     header {
       position: sticky; top: 0; z-index: 100;
-      background: rgba(15,23,42,0.95);
+      background: var(--header-bg);
       backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
       padding: 14px 20px;
@@ -162,7 +186,7 @@
 
     .reminder-badge {
       font-size: 0.7rem; padding: 2px 8px; border-radius: 4px;
-      background: #1e3a5f; color: #60a5fa;
+      background: var(--reminder-bg); color: var(--reminder-color);
       display: flex; align-items: center; gap: 4px;
     }
     .reminder-badge.overdue { background: #3b1515; color: var(--high); }
@@ -182,7 +206,7 @@
       transition: background .15s, color .15s; font-size: 13px;
     }
     .icon-btn:hover { background: var(--border); color: var(--text); }
-    .icon-btn.danger:hover { background: #3b1515; color: var(--high); }
+    .icon-btn.danger:hover { background: var(--icon-danger-bg); color: var(--high); }
     .icon-btn.success:hover { background: var(--low-bg); color: var(--low); }
 
     .attach-count { font-size: 0.72rem; color: var(--text-muted); display: flex; align-items: center; gap: 3px; }
@@ -261,7 +285,7 @@
     .btn-secondary { background: var(--surface2); color: var(--text); }
     .btn-secondary:hover { background: var(--border); }
     .btn-danger { background: var(--high-bg); color: var(--high); }
-    .btn-danger:hover { background: #4b1818; }
+    .btn-danger:hover { background: var(--danger-hover-bg); }
 
     /* ── MANAGE TAGS PANEL ── */
     .new-tag-row { display: flex; gap: 8px; align-items: center; }
@@ -283,6 +307,26 @@
     }
     #toast.show { opacity: 1; }
 
+    /* ── THEME TOGGLE ── */
+    .theme-toggle-row {
+      display: flex; align-items: center; gap: 12px; padding: 8px 0;
+    }
+    .theme-toggle-row span { font-size: 0.9rem; color: var(--text-muted); }
+    .toggle-switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      position: absolute; inset: 0; border-radius: 24px;
+      background: var(--border); cursor: pointer; transition: background .2s;
+    }
+    .toggle-track::before {
+      content: ''; position: absolute;
+      width: 18px; height: 18px; left: 3px; top: 3px;
+      border-radius: 50%; background: white;
+      transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+    }
+    .toggle-switch input:checked + .toggle-track { background: var(--accent); }
+    .toggle-switch input:checked + .toggle-track::before { transform: translateX(20px); }
+
     @media (max-width: 640px) {
       aside { display: none; }
       .notes-grid { grid-template-columns: 1fr; }
@@ -303,7 +347,8 @@
   </div>
   <div class="header-actions">
     <button class="btn btn-secondary" id="manageTagsBtn">🏷 Tags</button>
-    <button class="btn btn-primary" id="newNoteBtn">+ New Note</button>
+    <button class="btn btn-secondary" id="prefsBtn">⚙ Preferences</button>
+    <button class="btn btn-primary" id="newNoteBtn" title="Ctrl+N">+ New Note</button>
   </div>
 </header>
 
@@ -413,6 +458,27 @@
       <button class="btn btn-primary" id="createTagBtn">Add</button>
     </div>
     <div id="tagsList" style="display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- Preferences Modal -->
+<div class="modal-overlay hidden" id="prefsModal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <h2>Preferences</h2>
+      <button class="icon-btn" id="closePrefsModal">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Theme</label>
+      <div class="theme-toggle-row">
+        <span>🌙 Dark</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="themeToggle" />
+          <span class="toggle-track"></span>
+        </label>
+        <span>☀️ Light</span>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -794,8 +860,36 @@ async function checkReminders() {
   });
 }
 
+// ── Theme ──
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  document.getElementById('themeToggle').checked = (theme === 'light');
+  localStorage.setItem('qn-theme', theme);
+}
+
+document.getElementById('themeToggle').addEventListener('change', e => {
+  applyTheme(e.target.checked ? 'light' : 'dark');
+});
+
+document.getElementById('prefsBtn').addEventListener('click', () => {
+  document.getElementById('prefsModal').classList.remove('hidden');
+});
+
+document.getElementById('closePrefsModal').addEventListener('click', () => {
+  document.getElementById('prefsModal').classList.add('hidden');
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !document.getElementById('prefsModal').classList.contains('hidden')) {
+    document.getElementById('prefsModal').classList.add('hidden');
+  }
+});
+
 // ── Init ──
 async function init() {
+  const savedTheme = localStorage.getItem('qn-theme')
+    || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  applyTheme(savedTheme);
   if ('Notification' in window) Notification.requestPermission();
   await loadTags();
   await loadNotes();
