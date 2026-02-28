@@ -6,6 +6,7 @@ const path = require('path');
 const notesRouter = require('./routes/notes');
 const tagsRouter = require('./routes/tags');
 const attachmentsRouter = require('./routes/attachments');
+const { startReminderService } = require('./reminders');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -33,6 +34,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`✅ QuickNotes API running on http://localhost:${PORT}`);
+  startReminderService();
 });
 
 module.exports = app;

@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Database
+backend/data/
+
+# Environment
+.env
+backend/.env
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Lock files (optional: remove if you want to commit them)
+# package-lock.json
