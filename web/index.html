@@ -129,6 +129,42 @@
     .filter-chip:hover { border-color: var(--accent); color: var(--text); }
     .filter-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+    /* ── SUMMARY BAR ── */
+    .summary-bar {
+      display: flex; gap: 10px; flex-wrap: wrap;
+    }
+    .summary-card {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 16px; border-radius: 10px;
+      background: var(--surface); border: 1px solid var(--border);
+      cursor: pointer; transition: all .15s; min-width: 120px;
+    }
+    .summary-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .summary-card.active { border-color: var(--accent); background: var(--surface2); }
+    .summary-count {
+      font-size: 1.4rem; font-weight: 800; line-height: 1;
+    }
+    .summary-label {
+      font-size: 0.75rem; color: var(--text-muted); line-height: 1.2;
+    }
+    .summary-card.overdue .summary-count { color: var(--high); }
+    .summary-card.today .summary-count { color: var(--medium); }
+    .summary-card.week .summary-count { color: var(--accent); }
+    .summary-bar-hidden { display: none; }
+    .reset-filters-btn {
+      padding: 5px 12px; border-radius: 20px; font-size: 0.8rem;
+      border: 1px solid var(--high); background: var(--high-bg); color: var(--high);
+      cursor: pointer; transition: all .15s; margin-left: auto;
+    }
+    .reset-filters-btn:hover { background: var(--high); color: #fff; }
+    .reset-filters-btn.hidden { display: none; }
+
+    /* ── OVERDUE NOTE CARD ── */
+    .note-card.overdue-card {
+      border-color: var(--high);
+      background: var(--high-bg);
+    }
+
     /* ── NOTES GRID ── */
     .notes-grid {
       display: grid;
@@ -365,6 +401,9 @@
     <button class="sidebar-btn active" data-filter="all">
       <span>📋</span> All Notes
     </button>
+    <button class="sidebar-btn" data-filter="today">
+      <span>📅</span> Due Today
+    </button>
     <button class="sidebar-btn" data-filter="completed">
       <span>✅</span> Completed
     </button>
@@ -392,6 +431,20 @@
 
   <!-- Main -->
   <main>
+    <div class="summary-bar summary-bar-hidden" id="summaryBar">
+      <div class="summary-card overdue" data-due="overdue">
+        <span class="summary-count" id="statOverdue">0</span>
+        <span class="summary-label">Overdue</span>
+      </div>
+      <div class="summary-card today" data-due="today">
+        <span class="summary-count" id="statToday">0</span>
+        <span class="summary-label">Due Today</span>
+      </div>
+      <div class="summary-card week" data-due="week">
+        <span class="summary-count" id="statWeek">0</span>
+        <span class="summary-label">This Week</span>
+      </div>
+    </div>
     <div class="filters-bar">
       <button class="filter-chip active" data-chip="all">All</button>
       <button class="filter-chip" data-chip="active">Active</button>
@@ -400,6 +453,7 @@
       <button class="filter-chip" data-chip="high">🔴 High</button>
       <button class="filter-chip" data-chip="medium">🟠 Medium</button>
       <button class="filter-chip" data-chip="low">🟢 Low</button>
+      <button class="reset-filters-btn hidden" id="resetFiltersBtn">✕ Reset Filters</button>
     </div>
     <div class="notes-grid" id="notesGrid"></div>
   </main>
@@ -501,7 +555,7 @@ let notes = [];
 let tags = [];
 let editingNoteId = null;
 let selectedTagIds = new Set();
-let activeFilter = { sidebar: 'all', chip: 'all', tag: null, search: '' };
+let activeFilter = { sidebar: 'all', chip: 'all', tag: null, search: '', due: null };
 
 // ── API helpers ──
 async function api(path, options = {}) {
@@ -546,8 +600,32 @@ async function loadNotes() {
     params.set('completed', 'false');
   }
 
+  if (activeFilter.due) {
+    params.set('due', activeFilter.due);
+  } else if (activeFilter.sidebar === 'today') {
+    params.set('due', 'today');
+  }
+
   notes = await api('/notes?' + params.toString());
   renderNotes();
+  updateResetBtnVisibility();
+}
+
+async function loadStats() {
+  try {
+    const stats = await api('/notes/stats');
+    document.getElementById('statOverdue').textContent = stats.overdue;
+    document.getElementById('statToday').textContent = stats.dueToday;
+    document.getElementById('statWeek').textContent = stats.dueThisWeek;
+    const bar = document.getElementById('summaryBar');
+    if (stats.overdue + stats.dueToday + stats.dueThisWeek > 0) {
+      bar.classList.remove('summary-bar-hidden');
+    } else {
+      bar.classList.add('summary-bar-hidden');
+    }
+  } catch (e) {
+    console.error('Failed to load stats:', e.message);
+  }
 }
 
 // ── Render ──
@@ -584,8 +662,9 @@ function renderNotes() {
   grid.innerHTML = filtered.map(note => {
     const overdue = isOverdue(note.reminder_at);
     const cardClass = note.canceled ? 'canceled' : (note.completed ? 'completed' : '');
+    const overdueClass = overdue && !note.completed && !note.canceled ? 'overdue-card' : '';
     return `
-    <div class="note-card priority-${note.priority} ${cardClass}" data-id="${note.id}">
+    <div class="note-card priority-${note.priority} ${cardClass} ${overdueClass}" data-id="${note.id}">
       <div class="note-actions">
         ${!note.canceled ? `<button class="icon-btn success" title="Toggle done" onclick="event.stopPropagation();toggleComplete('${note.id}')">✓</button>` : ''}
         <button class="icon-btn" title="Edit" onclick="event.stopPropagation();openEdit('${note.id}')">✎</button>
@@ -628,6 +707,8 @@ function renderSidebarTags() {
       btn.classList.add('active');
       activeFilter.tag = btn.dataset.tag;
       activeFilter.sidebar = null;
+      activeFilter.due = null;
+      clearSummaryActive();
       loadNotes();
     });
   });
@@ -674,6 +755,8 @@ document.querySelectorAll('[data-filter], [data-priority]').forEach(btn => {
     document.querySelectorAll('.sidebar-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     activeFilter.tag = null;
+    activeFilter.due = null;
+    clearSummaryActive();
     activeFilter.sidebar = btn.dataset.filter || btn.dataset.priority || 'all';
     if (btn.dataset.priority) {
       activeFilter.chip = btn.dataset.priority;
@@ -693,11 +776,60 @@ document.querySelectorAll('[data-filter], [data-priority]').forEach(btn => {
   });
 });
 
+// ── Filter helpers ──
+function clearSummaryActive() {
+  document.querySelectorAll('.summary-card').forEach(c => c.classList.remove('active'));
+}
+
+function resetAllFilters() {
+  activeFilter.sidebar = 'all';
+  activeFilter.chip = 'all';
+  activeFilter.tag = null;
+  activeFilter.search = '';
+  activeFilter.due = null;
+  document.getElementById('searchInput').value = '';
+  clearSummaryActive();
+  document.querySelectorAll('.sidebar-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.filter === 'all');
+  });
+  document.querySelectorAll('.filter-chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.chip === 'all');
+  });
+}
+
+function updateResetBtnVisibility() {
+  const isDefault = activeFilter.sidebar === 'all' && activeFilter.chip === 'all'
+    && !activeFilter.tag && !activeFilter.search && !activeFilter.due;
+  document.getElementById('resetFiltersBtn').classList.toggle('hidden', isDefault);
+}
+
+document.getElementById('resetFiltersBtn').addEventListener('click', () => {
+  resetAllFilters();
+  loadNotes();
+});
+
+// ── Summary card clicks ──
+document.querySelectorAll('.summary-card').forEach(card => {
+  card.addEventListener('click', () => {
+    const due = card.dataset.due;
+    if (activeFilter.due === due) {
+      resetAllFilters();
+    } else {
+      resetAllFilters();
+      activeFilter.due = due;
+      card.classList.add('active');
+    }
+    loadNotes();
+  });
+});
+
 document.querySelectorAll('.filter-chip').forEach(chip => {
   chip.addEventListener('click', () => {
     document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
     activeFilter.chip = chip.dataset.chip;
+    activeFilter.due = null;
+    clearSummaryActive();
     loadNotes();
   });
 });
@@ -788,12 +920,14 @@ document.getElementById('saveNote').addEventListener('click', async () => {
   }
   closeModal();
   loadNotes();
+  loadStats();
 });
 
 // ── Note actions ──
 async function toggleComplete(id) {
   await api('/notes/' + id + '/complete', { method: 'PATCH' });
   loadNotes();
+  loadStats();
 }
 
 async function cancelNote(id, isCurrentlyCanceled) {
@@ -801,6 +935,7 @@ async function cancelNote(id, isCurrentlyCanceled) {
   await api('/notes/' + id + '/cancel', { method: 'PATCH' });
   toast(isCurrentlyCanceled ? 'Note reactivated ✓' : 'Note canceled');
   loadNotes();
+  loadStats();
 }
 
 async function deleteNote(id) {
@@ -808,6 +943,7 @@ async function deleteNote(id) {
   await api('/notes/' + id, { method: 'DELETE' });
   toast('Note deleted');
   loadNotes();
+  loadStats();
 }
 
 // ── Attachments ──
@@ -919,6 +1055,7 @@ async function init() {
   if ('Notification' in window) Notification.requestPermission();
   await loadTags();
   await loadNotes();
+  await loadStats();
   setInterval(checkReminders, 30000);
   checkReminders();
 }

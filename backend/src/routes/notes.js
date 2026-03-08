@@ -18,9 +18,24 @@ function getNoteById(id) {
   return note;
 }
 
-// GET /api/notes — list with optional search, tag filter, priority filter, completed, canceled
+// GET /api/notes/stats — counts for overdue, due today, due this week
+router.get('/stats', (req, res) => {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
+  const weekEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7).toISOString();
+
+  const base = `FROM notes WHERE completed = 0 AND canceled = 0 AND reminder_at IS NOT NULL`;
+  const overdue = db.prepare(`SELECT COUNT(*) as c ${base} AND reminder_at < ?`).get(now.toISOString()).c;
+  const dueToday = db.prepare(`SELECT COUNT(*) as c ${base} AND reminder_at >= ? AND reminder_at < ?`).get(todayStart, todayEnd).c;
+  const dueThisWeek = db.prepare(`SELECT COUNT(*) as c ${base} AND reminder_at >= ? AND reminder_at < ?`).get(todayStart, weekEnd).c;
+
+  res.json({ overdue, dueToday, dueThisWeek });
+});
+
+// GET /api/notes — list with optional search, tag filter, priority filter, completed, canceled, due
 router.get('/', (req, res) => {
-  const { search, tag, priority, completed, canceled } = req.query;
+  const { search, tag, priority, completed, canceled, due } = req.query;
   let query = `SELECT DISTINCT n.* FROM notes n`;
   const params = [];
   const conditions = [];
@@ -51,6 +66,25 @@ router.get('/', (req, res) => {
   } else {
     // Default: exclude both canceled and completed
     conditions.push(`n.canceled = 0`);
+  }
+
+  // Due date filter
+  if (due) {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
+    const weekEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7).toISOString();
+    conditions.push(`n.reminder_at IS NOT NULL`);
+    if (due === 'overdue') {
+      conditions.push(`n.reminder_at < ?`);
+      params.push(now.toISOString());
+    } else if (due === 'today') {
+      conditions.push(`n.reminder_at >= ? AND n.reminder_at < ?`);
+      params.push(todayStart, todayEnd);
+    } else if (due === 'week') {
+      conditions.push(`n.reminder_at >= ? AND n.reminder_at < ?`);
+      params.push(todayStart, weekEnd);
+    }
   }
 
   if (conditions.length > 0) {
