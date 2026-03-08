@@ -3,6 +3,15 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db/database');
 
+// Helper: record a history entry
+const insertHistory = db.prepare(
+  'INSERT INTO note_history (note_id, action, field, old_value, new_value, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+);
+
+function recordHistory(noteId, action, field, oldVal, newVal) {
+  insertHistory.run(noteId, action, field, oldVal ?? null, newVal ?? null, new Date().toISOString());
+}
+
 // Helper: get full note with tags and attachments
 function getNoteById(id) {
   const note = db.prepare('SELECT * FROM notes WHERE id = ?').get(id);
@@ -113,6 +122,14 @@ router.get('/', (req, res) => {
   res.json(result);
 });
 
+// GET /api/notes/:id/history
+router.get('/:id/history', (req, res) => {
+  const note = db.prepare('SELECT id FROM notes WHERE id = ?').get(req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+  const history = db.prepare('SELECT * FROM note_history WHERE note_id = ? ORDER BY created_at ASC').all(req.params.id);
+  res.json(history);
+});
+
 // GET /api/notes/:id
 router.get('/:id', (req, res) => {
   const note = getNoteById(req.params.id);
@@ -139,6 +156,8 @@ router.post('/', (req, res) => {
     insertTag.run(id, tagId);
   }
 
+  recordHistory(id, 'created', null, null, null);
+
   res.status(201).json(getNoteById(id));
 });
 
@@ -156,6 +175,13 @@ router.put('/:id', (req, res) => {
   if (canceledVal === 1) completedVal = 0;
   if (completedVal === 1) canceledVal = 0;
 
+  // Track field changes
+  if (title && title !== existing.title) recordHistory(req.params.id, 'updated', 'title', existing.title, title);
+  if (body !== undefined && body !== existing.body) recordHistory(req.params.id, 'updated', 'body', existing.body, body);
+  if (priority && priority !== existing.priority) recordHistory(req.params.id, 'updated', 'priority', existing.priority, priority);
+  const newReminder = reminder_at !== undefined ? (reminder_at || null) : existing.reminder_at;
+  if (newReminder !== existing.reminder_at) recordHistory(req.params.id, 'updated', 'reminder', existing.reminder_at, newReminder);
+
   db.prepare(`
     UPDATE notes SET
       title = COALESCE(?, title),
@@ -172,7 +198,7 @@ router.put('/:id', (req, res) => {
     priority || null,
     completedVal,
     canceledVal,
-    reminder_at !== undefined ? (reminder_at || null) : existing.reminder_at,
+    newReminder,
     now,
     req.params.id
   );
@@ -196,6 +222,7 @@ router.patch('/:id/complete', (req, res) => {
   const nowCompleted = note.completed ? 0 : 1;
   db.prepare('UPDATE notes SET completed = ?, canceled = 0, updated_at = ? WHERE id = ?')
     .run(nowCompleted, new Date().toISOString(), req.params.id);
+  recordHistory(req.params.id, nowCompleted ? 'completed' : 'reactivated', 'completed', String(note.completed), String(nowCompleted));
   res.json(getNoteById(req.params.id));
 });
 
@@ -206,6 +233,7 @@ router.patch('/:id/cancel', (req, res) => {
   const nowCanceled = note.canceled ? 0 : 1;
   db.prepare('UPDATE notes SET canceled = ?, completed = 0, updated_at = ? WHERE id = ?')
     .run(nowCanceled, new Date().toISOString(), req.params.id);
+  recordHistory(req.params.id, nowCanceled ? 'canceled' : 'reactivated', 'canceled', String(note.canceled), String(nowCanceled));
   res.json(getNoteById(req.params.id));
 });
 

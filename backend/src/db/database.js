@@ -66,4 +66,18 @@ if (!cols.includes('canceled')) {
   db.exec('ALTER TABLE notes ADD COLUMN canceled INTEGER NOT NULL DEFAULT 0');
 }
 
+// Activity log table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS note_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    field TEXT,
+    old_value TEXT,
+    new_value TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_history_note ON note_history(note_id);
+`);
+
 module.exports = db;
