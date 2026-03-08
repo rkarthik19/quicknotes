@@ -60,4 +60,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag_id);
 `);
 
+// Migration: add canceled column if it doesn't exist
+const cols = db.pragma('table_info(notes)').map(c => c.name);
+if (!cols.includes('canceled')) {
+  db.exec('ALTER TABLE notes ADD COLUMN canceled INTEGER NOT NULL DEFAULT 0');
+}
+
 module.exports = db;

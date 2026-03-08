@@ -8,6 +8,7 @@ function getNoteById(id) {
   const note = db.prepare('SELECT * FROM notes WHERE id = ?').get(id);
   if (!note) return null;
   note.completed = Boolean(note.completed);
+  note.canceled = Boolean(note.canceled);
   note.tags = db.prepare(`
     SELECT t.* FROM tags t
     JOIN note_tags nt ON nt.tag_id = t.id
@@ -17,9 +18,9 @@ function getNoteById(id) {
   return note;
 }
 
-// GET /api/notes — list with optional search, tag filter, priority filter
+// GET /api/notes — list with optional search, tag filter, priority filter, completed, canceled
 router.get('/', (req, res) => {
-  const { search, tag, priority, completed } = req.query;
+  const { search, tag, priority, completed, canceled } = req.query;
   let query = `SELECT DISTINCT n.* FROM notes n`;
   const params = [];
   const conditions = [];
@@ -40,22 +41,32 @@ router.get('/', (req, res) => {
     params.push(priority);
   }
 
-  if (completed !== undefined) {
+  if (canceled === 'true') {
+    // Explicitly requesting canceled notes
+    conditions.push(`n.canceled = 1`);
+  } else if (completed !== undefined) {
+    conditions.push(`n.canceled = 0`);
     conditions.push(`n.completed = ?`);
     params.push(completed === 'true' ? 1 : 0);
+  } else {
+    // Default: exclude both canceled and completed
+    conditions.push(`n.canceled = 0`);
   }
 
   if (conditions.length > 0) {
     query += ` WHERE ` + conditions.join(' AND ');
   }
 
-  query += ` ORDER BY 
+  query += ` ORDER BY
+    CASE WHEN n.reminder_at IS NOT NULL THEN 0 ELSE 1 END,
+    n.reminder_at ASC,
     CASE n.priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END,
     n.created_at DESC`;
 
   const notes = db.prepare(query).all(...params);
   const result = notes.map(note => {
     note.completed = Boolean(note.completed);
+    note.canceled = Boolean(note.canceled);
     note.tags = db.prepare(`
       SELECT t.* FROM tags t
       JOIN note_tags nt ON nt.tag_id = t.id
@@ -99,17 +110,25 @@ router.post('/', (req, res) => {
 
 // PUT /api/notes/:id
 router.put('/:id', (req, res) => {
-  const { title, body, priority, completed, reminder_at, tag_ids } = req.body;
+  const { title, body, priority, completed, canceled, reminder_at, tag_ids } = req.body;
   const existing = db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Note not found' });
 
   const now = new Date().toISOString();
+
+  // canceled and completed are mutually exclusive
+  let canceledVal = canceled !== undefined ? (canceled ? 1 : 0) : null;
+  let completedVal = completed !== undefined ? (completed ? 1 : 0) : null;
+  if (canceledVal === 1) completedVal = 0;
+  if (completedVal === 1) canceledVal = 0;
+
   db.prepare(`
     UPDATE notes SET
       title = COALESCE(?, title),
       body = COALESCE(?, body),
       priority = COALESCE(?, priority),
       completed = COALESCE(?, completed),
+      canceled = COALESCE(?, canceled),
       reminder_at = ?,
       updated_at = ?
     WHERE id = ?
@@ -117,7 +136,8 @@ router.put('/:id', (req, res) => {
     title || null,
     body !== undefined ? body : null,
     priority || null,
-    completed !== undefined ? (completed ? 1 : 0) : null,
+    completedVal,
+    canceledVal,
     reminder_at !== undefined ? (reminder_at || null) : existing.reminder_at,
     now,
     req.params.id
@@ -135,12 +155,23 @@ router.put('/:id', (req, res) => {
   res.json(getNoteById(req.params.id));
 });
 
-// PATCH /api/notes/:id/complete — toggle completion
+// PATCH /api/notes/:id/complete — toggle completion (clears canceled)
 router.patch('/:id/complete', (req, res) => {
   const note = db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id);
   if (!note) return res.status(404).json({ error: 'Note not found' });
-  db.prepare('UPDATE notes SET completed = ?, updated_at = ? WHERE id = ?')
-    .run(note.completed ? 0 : 1, new Date().toISOString(), req.params.id);
+  const nowCompleted = note.completed ? 0 : 1;
+  db.prepare('UPDATE notes SET completed = ?, canceled = 0, updated_at = ? WHERE id = ?')
+    .run(nowCompleted, new Date().toISOString(), req.params.id);
+  res.json(getNoteById(req.params.id));
+});
+
+// PATCH /api/notes/:id/cancel — toggle cancellation (clears completed)
+router.patch('/:id/cancel', (req, res) => {
+  const note = db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+  const nowCanceled = note.canceled ? 0 : 1;
+  db.prepare('UPDATE notes SET canceled = ?, completed = 0, updated_at = ? WHERE id = ?')
+    .run(nowCanceled, new Date().toISOString(), req.params.id);
   res.json(getNoteById(req.params.id));
 });
 

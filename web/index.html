@@ -154,6 +154,7 @@
     }
     .note-card:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
     .note-card.completed { opacity: .55; }
+    .note-card.canceled { opacity: .5; border-left: 3px solid var(--text-muted) !important; }
     .note-card.priority-high { border-left: 3px solid var(--high); }
     .note-card.priority-medium { border-left: 3px solid var(--medium); }
     .note-card.priority-low { border-left: 3px solid var(--low); }
@@ -190,6 +191,11 @@
       display: flex; align-items: center; gap: 4px;
     }
     .reminder-badge.overdue { background: #3b1515; color: var(--high); }
+    .canceled-badge {
+      font-size: 0.7rem; font-weight: 700; padding: 2px 8px;
+      border-radius: 4px; text-transform: uppercase; letter-spacing: .04em;
+      background: var(--surface2); color: var(--text-muted);
+    }
 
     .note-meta { font-size: 0.72rem; color: var(--text-muted); margin-left: auto; }
 
@@ -362,6 +368,9 @@
     <button class="sidebar-btn" data-filter="completed">
       <span>✅</span> Completed
     </button>
+    <button class="sidebar-btn" data-filter="canceled">
+      <span>🚫</span> Canceled
+    </button>
     <button class="sidebar-btn" data-filter="reminder">
       <span>🔔</span> With Reminder
     </button>
@@ -387,6 +396,7 @@
       <button class="filter-chip active" data-chip="all">All</button>
       <button class="filter-chip" data-chip="active">Active</button>
       <button class="filter-chip" data-chip="completed">Done</button>
+      <button class="filter-chip" data-chip="canceled">🚫 Canceled</button>
       <button class="filter-chip" data-chip="high">🔴 High</button>
       <button class="filter-chip" data-chip="medium">🟠 Medium</button>
       <button class="filter-chip" data-chip="low">🟢 Low</button>
@@ -528,7 +538,9 @@ async function loadNotes() {
   const p = activeFilter.chip;
   if (['high','medium','low'].includes(p)) params.set('priority', p);
 
-  if (activeFilter.chip === 'completed' || activeFilter.sidebar === 'completed') {
+  if (activeFilter.chip === 'canceled' || activeFilter.sidebar === 'canceled') {
+    params.set('canceled', 'true');
+  } else if (activeFilter.chip === 'completed' || activeFilter.sidebar === 'completed') {
     params.set('completed', 'true');
   } else if (activeFilter.chip === 'active') {
     params.set('completed', 'false');
@@ -555,7 +567,7 @@ function renderNotes() {
   let filtered = notes;
 
   if (activeFilter.sidebar === 'reminder') {
-    filtered = filtered.filter(n => n.reminder_at);
+    filtered = filtered.filter(n => n.reminder_at && !n.canceled);
   }
 
   if (!filtered.length) {
@@ -571,21 +583,23 @@ function renderNotes() {
 
   grid.innerHTML = filtered.map(note => {
     const overdue = isOverdue(note.reminder_at);
+    const cardClass = note.canceled ? 'canceled' : (note.completed ? 'completed' : '');
     return `
-    <div class="note-card priority-${note.priority} ${note.completed ? 'completed' : ''}" data-id="${note.id}">
+    <div class="note-card priority-${note.priority} ${cardClass}" data-id="${note.id}">
       <div class="note-actions">
-        <button class="icon-btn success" title="Toggle done" onclick="event.stopPropagation();toggleComplete('${note.id}')">✓</button>
+        ${!note.canceled ? `<button class="icon-btn success" title="Toggle done" onclick="event.stopPropagation();toggleComplete('${note.id}')">✓</button>` : ''}
         <button class="icon-btn" title="Edit" onclick="event.stopPropagation();openEdit('${note.id}')">✎</button>
+        <button class="icon-btn ${note.canceled ? 'success' : 'danger'}" title="${note.canceled ? 'Reactivate' : 'Cancel note'}" onclick="event.stopPropagation();cancelNote('${note.id}', ${note.canceled})">🚫</button>
         <button class="icon-btn danger" title="Delete" onclick="event.stopPropagation();deleteNote('${note.id}')">🗑</button>
       </div>
       <div class="note-header">
-        <div class="note-title">${escHtml(note.title)}</div>
+        <div class="note-title" style="${note.canceled ? 'text-decoration:line-through;color:var(--text-muted)' : ''}">${escHtml(note.title)}</div>
       </div>
       ${note.body ? `<div class="note-body">${escHtml(note.body)}</div>` : ''}
       <div class="note-footer">
-        <span class="priority-badge ${note.priority}">${note.priority}</span>
+        ${note.canceled ? `<span class="canceled-badge">canceled</span>` : `<span class="priority-badge ${note.priority}">${note.priority}</span>`}
         ${note.tags.map(t => `<span class="tag-badge" style="background:${t.color}">${escHtml(t.name)}</span>`).join('')}
-        ${note.reminder_at ? `<span class="reminder-badge ${overdue ? 'overdue' : ''}">🔔 ${formatDate(note.reminder_at)}</span>` : ''}
+        ${note.reminder_at && !note.canceled ? `<span class="reminder-badge ${overdue ? 'overdue' : ''}">🔔 ${formatDate(note.reminder_at)}</span>` : ''}
         ${note.attachments.length ? `<span class="attach-count">📎 ${note.attachments.length}</span>` : ''}
         <span class="note-meta">${formatDate(note.created_at)}</span>
       </div>
@@ -664,6 +678,11 @@ document.querySelectorAll('[data-filter], [data-priority]').forEach(btn => {
     if (btn.dataset.priority) {
       activeFilter.chip = btn.dataset.priority;
       document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    } else if (btn.dataset.filter === 'canceled') {
+      activeFilter.chip = 'canceled';
+      document.querySelectorAll('.filter-chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.chip === 'canceled');
+      });
     } else {
       activeFilter.chip = 'all';
       document.querySelectorAll('.filter-chip').forEach(c => {
@@ -777,6 +796,13 @@ async function toggleComplete(id) {
   loadNotes();
 }
 
+async function cancelNote(id, isCurrentlyCanceled) {
+  if (!isCurrentlyCanceled && !confirm('Cancel this note?')) return;
+  await api('/notes/' + id + '/cancel', { method: 'PATCH' });
+  toast(isCurrentlyCanceled ? 'Note reactivated ✓' : 'Note canceled');
+  loadNotes();
+}
+
 async function deleteNote(id) {
   if (!confirm('Delete this note?')) return;
   await api('/notes/' + id, { method: 'DELETE' });
@@ -846,7 +872,7 @@ async function checkReminders() {
   const now = new Date();
   const allNotes = await api('/notes');
   allNotes.forEach(note => {
-    if (!note.reminder_at || note.completed) return;
+    if (!note.reminder_at || note.completed || note.canceled) return;
     const remTime = new Date(note.reminder_at);
     const diff = remTime - now;
     if (diff > 0 && diff < 60000) { // fire if within next 60 seconds
