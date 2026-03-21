@@ -57,9 +57,12 @@ The app uses **SQLite** (via `better-sqlite3`) — no external database setup re
 | DELETE | `/api/notes/:id` | Delete note |
 | GET | `/api/tags` | List all tags |
 | POST | `/api/tags` | Create tag |
+| PUT | `/api/tags/:id` | Update tag name/color |
 | DELETE | `/api/tags/:id` | Delete tag |
 | POST | `/api/attachments/:noteId` | Upload file attachment |
+| GET | `/api/attachments/:id/download` | Download/view attachment |
 | DELETE | `/api/attachments/:id` | Delete attachment |
+| GET | `/api/health` | Health check |
 
 **Default sort:** Notes with due dates appear first (ascending), then by priority (high > medium > low), then by creation date (newest first).
 
